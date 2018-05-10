@@ -1,56 +1,48 @@
-# J2Cache —— 基于内存和 Redis 实现的两级 Java 缓存框架
+## J2Cache —— Double Level Cache Framework base on Memory and Redis
 
-专用QQ群: 379110351
+J2Cache is a two-level cache framework for Java. The first level cache uses the memory cache framework and the second level cache uses Redis. Since a large number of cache reads cause the L2 network to become a bottleneck to the entire system, the goal of L1 is to reduce the number of reads to L2. This cache framework is mainly used in a clustered environment. Stand-alone can also be used to avoid memory data loss due to application restart.
 
-J2Cache 是 OSChina 目前正在使用的两级缓存框架。第一级缓存使用内存(同时支持 Ehcache 2.x、Ehcache 3.x 和 Caffeine)，第二级缓存使用 Redis 。
-由于大量的缓存读取会导致 L2 的网络成为整个系统的瓶颈，因此 L1 的目标是降低对 L2 的读取次数。
-该缓存框架主要用于集群环境中。单机也可使用，用于避免应用重启导致的缓存冷启动后对后端业务的冲击。
+We also provided Python version, Please refer to [https://gitee.com/ld/Py3Cache](https://gitee.com/ld/Py3Cache)
 
-J2Cache 已经有 Python 语言版本了，详情请看 [https://gitee.com/ld/Py3Cache](https://gitee.com/ld/Py3Cache)
+From 1.3.0, `J2Cache` supports two ways to notify the cache event, include `JGroups` and `Redis PubSub`. In cloud platforms may not be able to use JGroups's multicast mode, so you can choose `Redis PubSub`. For more details, please see configuration file description in `j2cache.properties`.
 
-J2Cache 从 1.3.0 版本开始支持 JGroups 和 Redis Subscribe 两种方式进行缓存事件的通知。在某些云平台上可能无法使用 JGroups 组播方式，可以采用 Redis 发布订阅的方式。详情请看 j2cache.properties 配置文件的说明。
+**J2Cache two-level cache system architecture**
 
-视频介绍：http://v.youku.com/v_show/id_XNzAzMTY5MjUy.html  
-该项目提供付费咨询服务，详情请看：https://zb.oschina.net/market/opus/12_277
+L1： In-Process Memory Cache Framework(ehcache,caffeine)   
+L2： Redis Server
 
-J2Cache 的两级缓存结构
-
-L1： 进程内缓存(ehcache)   
-L2： Redis 集中式缓存
-
-由于大量的缓存读取会导致 L2 的网络带宽成为整个系统的瓶颈，因此 L1 的目标是降低对 L2 的读取次数
+Since a large amount of cache reads causes  network bandwidth to become a bottleneck in the overall system, the goal of L1 is to reduce the number of L2 reads
 
 		 
-## 数据读取
+### Data Flow
 
-1. 读取顺序  -> L1 -> L2 -> DB
+1. Data reading -> L1 -> L2 -> DB
+2. Data writing
 
-2. 数据更新
+    1 Read latest data from the business system, updates L1 -> L2, and
+    then broadcast clear event to all nodes in cluster
+    2 When received the clear event, clear corresponding data in memory
 
-    1 从数据库中读取最新数据，依次更新 L1 -> L2 ，发送广播清除某个缓存信息  
-    2 接收到广播（手工清除缓存 & 一级缓存自动失效），从 L1 中清除指定的缓存信息
+### J2Cache settings
 
-## J2Cache 配置
+settings file located in `core/resources` directory, include:
 
-配置文件位于 core/resources 目录下，包含三个文件：
+* `ehcache.xml` for ehcache 2.x  
+  `ehcache3.xml` for ehcache 3.x
+* `j2cache.properties` J2Cache settings, include redis configurations, connection pool, broadcast, serialization etc.
+* `network.xml` JGroups network settings, needed when setting `j2cache.broadcast = jgroups` 
 
-* ehcache.xml Ehcache 的配置文件，配置说明请参考 Ehcache 文档
-* j2cache.properties J2Cache 核心配置文件，可配置 Redis 服务器、连接池以及缓存广播的方式
-* network.xml JGroups 网络配置，如果使用 JGroups 组播的话需要这个文件，一般无需修改
+Those setting files must be placed in classpath , such as `WEB-INF/classes`
 
-实际使用过程需要将这三个文件复制到应用类路径中，如 WEB-INF/classes 目录。
+### How to Test
 
-J2Cache 运行时所需 jar 包请查看 core/pom.xml
+1. Install Redis  
+2. Modify `core/resource/j2cache.properties` to use installed redis servers
+3. Open shell windows and execute command: `mvn package -DskipTest=true`  
+4. Open multiple command line windows and running `runtest.sh` 
+5. In > prompt type `help` to show command list 
 
-## 测试方法
-
-1. 安装 Redis  
-2. 修改 `core/resource/j2cache.properties` 配置使用已安装的 Redis 服务器
-3. 在命令行中执行 `mvn package -DskipTest=true` 进行项目编译  
-4. 打开多个命令行窗口，同时运行 `runtest.sh` 
-5. 在 > 提示符后输入 help 查看命令，并进行测试
-
-## Maven 支持 
+### Maven
 
 ```
 <dependency>
@@ -59,25 +51,21 @@ J2Cache 运行时所需 jar 包请查看 core/pom.xml
   <version>xxxxx</version>  
 </dependency>
 ```
-## 示例代码
+### Usage
 
-请看 [J2CacheCmd.java](https://gitee.com/ld/J2Cache/blob/master/core/src/net/oschina/j2cache/J2CacheCmd.java)
+Refer to [J2CacheCmd.java](https://gitee.com/ld/J2Cache/blob/master/core/src/net/oschina/j2cache/J2CacheCmd.java)
 
-## 常见问题
+### Questions
 
-1. J2Cache 的使用场景是什么？  
-首先你的应用是允许在集群环境，使用 J2Cache 可以有效降低节点间的数据传输量
-2. 为什么不能在程序中设置缓存的有效期  
-在程序中定义缓存数据的有效期会导致缓存不可控，一旦数据出问题无从查起，因此 J2Cache 的所有缓存的有效期都必须在 ehcache 的配置中预设好再使用
+1. J2Cache scenarios？  
+First, your application is running in cluster environment, J2Cache can effectively reduce the amount of data transfer between nodes
+2. Why j2cache api does not provide the validity of the cache settings  
+Defining the validity period of the cached data in the program will cause the cache to be uncontrollable. Because it's difficult to find the source of the problem, it is impossible to check the validity of all the caches in J2Cache. Therefore, the validity period of all caches of J2Cache must be preset in the ehcache configuration
 
-## 哪些项目在用 J2Cache ？
+## Projects using J2Cache
 
 * www.oschina.net
 * https://gitee.com/jfinal/jfinal
 * https://gitee.com/fuhai/jboot
 * https://gitee.com/tywo45/t-io
-* 更多项目收集中，如果你的项目用了，请告诉我
-
-## TODO ##
-
-* 增加使用 API 对 J2Cache 进行初始化配置
+* ...
